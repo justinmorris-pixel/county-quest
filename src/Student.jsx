@@ -7,7 +7,7 @@ import MapChallenge from './components/MapChallenge.jsx';
 import Celebration from './components/Celebration.jsx';
 import StudyMap from './components/StudyMap.jsx';
 import Certificate from './components/Certificate.jsx';
-import { hasBackend, joinClass, saveProgress } from './lib/supabase.js';
+import { hasBackend, joinClass, resumeSession, saveProgress, studentStatus } from './lib/supabase.js';
 import { load, save, remove } from './lib/storage.js';
 import { newState, recordAnswer, recordMapResult, summarize, currentStage, currentSeatStage } from './lib/game.js';
 
@@ -142,18 +142,25 @@ export default function Student() {
         return;
       }
       try {
-        const data = await joinClass(sess.code, sess.name);
+        const data = await resumeSession(sess.studentId);
         if (!cancelled) startSession({ ...sess, studentId: data.student_id, name: data.name, className: data.class_name }, data.state);
       } catch (e) {
-        // offline or class removed: fall back to the cached copy if we have one
-        if (!cancelled) {
-          const cached = load(stateKey(sess.studentId));
-          if (cached) startSession(sess, cached);
-          else {
-            remove(SESSION_KEY);
-            setSession(null);
-            setReady(true);
-          }
+        if (cancelled) return;
+        if (e.code === 'SESSION_INVALID') {
+          // the teacher removed this student: start fresh at the join screen
+          remove(SESSION_KEY);
+          remove(stateKey(sess.studentId));
+          setSession(null);
+          setReady(true);
+          return;
+        }
+        // offline: fall back to the copy saved on this device
+        const cached = load(stateKey(sess.studentId));
+        if (cached) startSession(sess, cached);
+        else {
+          remove(SESSION_KEY);
+          setSession(null);
+          setReady(true);
         }
       }
     })();
@@ -163,14 +170,22 @@ export default function Student() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function handleJoin(code, name) {
+  // Step 1 on the join screen: tells it whether to ask for a new PIN or the existing one.
+  async function handleCheck(code, name) {
+    return studentStatus(code, name);
+  }
+
+  // Step 2: returns { ok: false, error, ... } for a wrong PIN, otherwise starts the session.
+  async function handleJoin(code, name, pin) {
     if (!hasBackend) {
       const id = `local-${name.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
       startSession({ studentId: id, name, className: 'Practice', code: '', local: true }, load(stateKey(id)));
-      return;
+      return { ok: true };
     }
-    const data = await joinClass(code, name);
+    const data = await joinClass(code, name, pin);
+    if (!data.ok) return data;
     startSession({ studentId: data.student_id, name: data.name, className: data.class_name, code }, data.state);
+    return data;
   }
 
   async function signOut() {
@@ -228,7 +243,7 @@ export default function Student() {
 
   if (!session) {
     const params = new URLSearchParams(window.location.search);
-    return <Join initialCode={(params.get('code') || '').toUpperCase()} onJoin={handleJoin} />;
+    return <Join initialCode={(params.get('code') || '').toUpperCase()} onCheck={handleCheck} onJoin={handleJoin} />;
   }
 
   if (view.name === 'intro')
