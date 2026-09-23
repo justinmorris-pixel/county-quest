@@ -59,3 +59,25 @@ export async function saveProgress(studentId, state, summary) {
   });
   if (error) throw error;
 }
+
+// Everyone in this student's class, for the leaderboard. Never includes ids or PINs.
+export async function classLeaderboard(studentId) {
+  const { data, error } = await supabase.rpc('class_leaderboard', { p_student: studentId });
+  if (error) throw friendly(error);
+  const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  return (Array.isArray(data) ? data : []).map((r) => ({
+    name: String(r.name || ''),
+    me: Boolean(r.me),
+    xp: n(r.xp),
+    counties: n(r.counties),
+    seats: n(r.seats),
+    speed: n(r.speed),
+    speed_correct: n(r.speed_correct),
+    boss: n(r.boss),
+    boss_wins: n(r.boss_wins),
+    daily_date: r.daily_date || null,
+    daily_score: n(r.daily_score),
+    daily_seconds: n(r.daily_seconds),
+    daily_streak: n(r.daily_streak),
+  }));
+}
