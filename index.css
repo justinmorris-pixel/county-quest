@@ -1,0 +1,35 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Fredoka", ui-rounded, "Nunito", system-ui, sans-serif;
+}
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: #0f172a;
+  color: #f8fafc;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+.font-display { font-family: var(--font-display); }
+
+.county { transition: fill .25s ease, opacity .25s ease, stroke .2s ease; }
+.county-click { cursor: pointer; }
+.county-click:hover { filter: brightness(1.25); }
+
+@keyframes pop { 0% { transform: scale(.85); opacity: 0 } 60% { transform: scale(1.05) } 100% { transform: scale(1); opacity: 1 } }
+.pop { animation: pop .35s ease-out both; }
+@keyframes shake { 0%,100% { transform: translateX(0) } 20% { transform: translateX(-6px) } 40% { transform: translateX(6px) } 60% { transform: translateX(-4px) } 80% { transform: translateX(4px) } }
+.shake { animation: shake .35s ease-in-out; }
+@keyframes pulseFill { 0%,100% { opacity: 1 } 50% { opacity: .55 } }
+.pulse-target { animation: pulseFill 1s ease-in-out infinite; }
+@keyframes floatUp { 0% { transform: translateY(0); opacity: 1 } 100% { transform: translateY(-40px); opacity: 0 } }
+.float-up { animation: floatUp .9s ease-out forwards; }
+@keyframes confetti { 0% { transform: translateY(-10vh) rotate(0); opacity: 1 } 100% { transform: translateY(105vh) rotate(720deg); opacity: .9 } }
+.confetti-piece { position: fixed; top: 0; width: 10px; height: 14px; animation: confetti 2.6s linear forwards; z-index: 60; pointer-events: none; }
+
+@media print {
+  body { background: white; color: black; }
+  .no-print { display: none !important; }
+}
