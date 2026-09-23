@@ -11,7 +11,7 @@ import SpeedRound from './components/SpeedRound.jsx';
 import DailyChallenge from './components/DailyChallenge.jsx';
 import BossRound from './components/BossRound.jsx';
 import Leaderboard from './components/Leaderboard.jsx';
-import { classLeaderboard, hasBackend, joinClass, resumeSession, saveProgress, studentStatus } from './lib/supabase.js';
+import { classLeaderboard, classStandings, hasBackend, joinClass, resumeSession, saveProgress, studentStatus } from './lib/supabase.js';
 import { load, save, remove } from './lib/storage.js';
 import {
   newState,
@@ -256,6 +256,9 @@ export default function Student() {
   const fetchBoard = useCallback(() => {
     return flush().then(() => classLeaderboard(sessionRef.current.studentId));
   }, [flush]);
+  const fetchClasses = useCallback(() => {
+    return flush().then(() => classStandings(sessionRef.current.studentId, todayStr()));
+  }, [flush]);
   // A teacher can add ?arcade=1 to the link to preview the arcade before finishing the game.
   const previewArcade = new URLSearchParams(window.location.search).has('arcade');
   const arcadeOpen = arcadeUnlocked(state) || previewArcade;
@@ -275,7 +278,7 @@ export default function Student() {
     if (action === 'study') setView({ name: 'study' });
     if (action === 'cert') setView({ name: 'cert' });
     if (action === 'speed' && arcadeOpen) setView({ name: 'speed' });
-    if (action === 'daily' && arcadeOpen) setView({ name: 'daily' });
+    if (action === 'daily') setView({ name: 'daily' });
     if (action === 'boss' && arcadeOpen) setView({ name: 'boss' });
     if (action === 'board') setView({ name: 'board', tab: 'overall' });
   }
@@ -361,6 +364,7 @@ export default function Student() {
       <Leaderboard
         initialTab={view.tab}
         fetchBoard={fetchBoard}
+        fetchClasses={fetchClasses}
         arcadeOpen={arcadeOpen}
         onBack={hub}
         onPlay={(tab) => setView({ name: tab === 'speed' ? 'speed' : tab === 'daily' ? 'daily' : 'boss' })}
