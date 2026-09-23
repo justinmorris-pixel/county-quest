@@ -26,9 +26,34 @@ export const BADGES = {
   streak5: { emoji: '🗓️', name: '5-Day Streak', desc: 'Played 5 days in a row' },
   seatmaster: { emoji: '🎓', name: 'Seat Scholar', desc: 'Mastered all 77 county seats' },
 };
+// Arcade badges (Speed Round, Daily Challenge, Boss Round)
+Object.assign(BADGES, {
+  speed15: { emoji: '⚡', name: 'Speed Demon', desc: '15+ correct in one Speed Round' },
+  speed25: { emoji: '🚀', name: 'Lightning', desc: '25+ correct in one Speed Round' },
+  daily3: { emoji: '☀️', name: 'Daily Regular', desc: 'Finished the Daily Challenge 3 days in a row' },
+  daily7: { emoji: '🌞', name: 'Daily Devotee', desc: 'Finished the Daily Challenge 7 days in a row' },
+  dailyperfect: { emoji: '💯', name: 'Perfect Day', desc: 'Scored 10 out of 10 on a Daily Challenge' },
+  boss40: { emoji: '🛡️', name: 'Storm Chaser', desc: 'Got past 40 counties in the Boss Round' },
+  bossbeat: { emoji: '🌪️', name: 'Twister Tamer', desc: 'Beat the Boss Round' },
+});
 STAGES.forEach((s) => {
   BADGES[`stage${s.n}`] = { emoji: s.emoji, name: s.name, desc: `Cleared Stage ${s.n}` };
 });
+
+export function newArcade() {
+  return {
+    speed: { best: 0, bestCorrect: 0, plays: 0 },
+    daily: { lastDate: null, lastScore: 0, lastSeconds: 0, streak: 0, bestStreak: 0, days: 0, perfect: 0 },
+    boss: { best: 0, wins: 0, attempts: 0, bestSeconds: null },
+  };
+}
+
+// Fills in any missing arcade fields (older saves have none).
+export function hydrateArcade(a) {
+  const base = newArcade();
+  const x = a && typeof a === 'object' ? a : {};
+  return { speed: { ...base.speed, ...(x.speed || {}) }, daily: { ...base.daily, ...(x.daily || {}) }, boss: { ...base.boss, ...(x.boss || {}) } };
+}
 
 export function newState() {
   return {
@@ -49,6 +74,7 @@ export function newState() {
     correct: 0,
     lastDay: null,
     dayStreak: 0,
+    arcade: newArcade(),
   };
 }
 
@@ -117,6 +143,14 @@ function awardBadges(s) {
   if (s.dayStreak >= 3) give('streak3');
   if (s.dayStreak >= 5) give('streak5');
   if (seatsMastered(s) >= 77) give('seatmaster');
+  const a = hydrateArcade(s.arcade);
+  if (a.speed.bestCorrect >= 15) give('speed15');
+  if (a.speed.bestCorrect >= 25) give('speed25');
+  if (a.daily.bestStreak >= 3) give('daily3');
+  if (a.daily.bestStreak >= 7) give('daily7');
+  if (a.daily.perfect >= 1) give('dailyperfect');
+  if (a.boss.best >= 40) give('boss40');
+  if (a.boss.wins >= 1) give('bossbeat');
   return fresh;
 }
 
@@ -200,6 +234,80 @@ export function recordMapResult(prev, { firstTry, total, misses, seconds }) {
   touchDay(s);
   const newBadges = awardBadges(s);
   return { state: s, ev: { passed, newBadges } };
+}
+
+// ---------- Arcade (unlocks after every county and seat is mastered) ----------
+
+export const arcadeUnlocked = (s) => phaseOf(s) === 'done';
+
+function withArcade(prev) {
+  const a = hydrateArcade(prev.arcade);
+  return {
+    ...prev,
+    badges: [...prev.badges],
+    arcade: { speed: { ...a.speed }, daily: { ...a.daily }, boss: { ...a.boss } },
+  };
+}
+
+const dayBefore = (dateStr) => {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return todayStr(new Date(y, m - 1, d - 1));
+};
+
+// Current Daily Challenge streak (drops to 0 once a day has been skipped).
+export function dailyStreakNow(s, today = todayStr()) {
+  const d = hydrateArcade(s.arcade).daily;
+  return d.lastDate === today || d.lastDate === dayBefore(today) ? d.streak : 0;
+}
+
+// A 60-second Speed Round: { correct, points } -> new best?
+export function recordSpeed(prev, { correct, points }) {
+  const s = withArcade(prev);
+  const sp = s.arcade.speed;
+  const newBest = points > sp.best;
+  sp.plays += 1;
+  sp.best = Math.max(sp.best, points);
+  sp.bestCorrect = Math.max(sp.bestCorrect, correct);
+  const xp = Math.floor(points / 4);
+  s.xp += xp;
+  touchDay(s);
+  return { state: s, ev: { xp, newBest, newBadges: awardBadges(s) } };
+}
+
+// The Daily Challenge counts once per day. Returns { already: true } if today's is done.
+export function recordDaily(prev, { score, seconds, date }) {
+  const s = withArcade(prev);
+  const d = s.arcade.daily;
+  if (d.lastDate === date) return { state: prev, ev: { already: true, xp: 0, newBadges: [] } };
+  d.streak = d.lastDate === dayBefore(date) ? d.streak + 1 : 1;
+  d.bestStreak = Math.max(d.bestStreak, d.streak);
+  d.lastDate = date;
+  d.lastScore = score;
+  d.lastSeconds = seconds;
+  d.days += 1;
+  if (score >= 10) d.perfect += 1;
+  const xp = score * 10 + (score >= 10 ? 50 : 0) + Math.min(d.streak, 7) * 5;
+  s.xp += xp;
+  touchDay(s);
+  return { state: s, ev: { already: false, xp, streak: d.streak, newBadges: awardBadges(s) } };
+}
+
+// The Boss Round: { correct (0-77), won, seconds }
+export function recordBoss(prev, { correct, won, seconds }) {
+  const s = withArcade(prev);
+  const b = s.arcade.boss;
+  const firstWin = won && b.wins === 0;
+  b.attempts += 1;
+  const newBest = correct > b.best;
+  b.best = Math.max(b.best, correct);
+  if (won) {
+    b.wins += 1;
+    if (b.bestSeconds == null || seconds < b.bestSeconds) b.bestSeconds = seconds;
+  }
+  const xp = correct * 3 + (won ? (firstWin ? 300 : 100) : 0);
+  s.xp += xp;
+  touchDay(s);
+  return { state: s, ev: { xp, newBest, firstWin, newBadges: awardBadges(s) } };
 }
 
 // ---------- Question selection ----------
