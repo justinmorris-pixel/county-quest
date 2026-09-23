@@ -44,6 +44,7 @@ const normalize = (row) => {
   return {
     id: row.id,
     name: row.name,
+    hasPin: Boolean(row.has_pin),
     lastActive: row.last_active,
     createdAt: row.created_at,
     stages: p.stages_cleared || 0,
@@ -84,6 +85,7 @@ export default function Dashboard({ user }) {
   const [error, setError] = useState('');
   const [copied, setCopied] = useState('');
   const [updatedAt, setUpdatedAt] = useState(null);
+  const [notice, setNotice] = useState('');
 
   const cls = classes.find((c) => c.id === classId);
 
@@ -99,7 +101,7 @@ export default function Dashboard({ user }) {
     if (!classId) return setStudents([]);
     const { data, error: err } = await supabase
       .from('students')
-      .select('id,name,created_at,last_active,progress(*)')
+      .select('id,name,created_at,last_active,has_pin,progress(*)')
       .eq('class_id', classId)
       .order('name');
     if (err) return setError(err.message);
@@ -163,6 +165,16 @@ export default function Dashboard({ user }) {
       })
       .eq('student_id', s.id);
     if (err) return setError(err.message);
+    setDetail(null);
+    loadStudents();
+  }
+
+  async function resetPin(s) {
+    if (!window.confirm(`Reset the PIN for ${s.name}? Their progress is kept. They will choose a new PIN next time they sign in.`)) return;
+    const { error: err } = await supabase.rpc('reset_student_pin', { p_student: s.id });
+    if (err) return setError(err.message);
+    setNotice(`PIN reset for ${s.name}. They can choose a new one the next time they sign in.`);
+    setTimeout(() => setNotice(''), 6000);
     setDetail(null);
     loadStudents();
   }
@@ -262,6 +274,7 @@ export default function Dashboard({ user }) {
         </div>
       </div>
 
+      {notice && <div className="rounded-xl bg-emerald-500/15 px-4 py-2 text-emerald-200">{notice}</div>}
       {error && (
         <div className="flex items-center justify-between rounded-xl bg-red-500/15 px-4 py-2 text-red-200">
           {error}
@@ -386,7 +399,10 @@ export default function Dashboard({ user }) {
                   <tbody>
                     {rows.map((s) => (
                       <tr key={s.id} onClick={() => setDetail(s)} className="cursor-pointer border-t border-slate-700/60 hover:bg-slate-700/40">
-                        <td className="px-3 py-2 font-semibold">{s.name}</td>
+                        <td className="px-3 py-2 font-semibold">
+                          {s.name}
+                          {!s.hasPin && <span title="No PIN set yet" className="ml-1.5 text-xs font-normal text-amber-300">🔓</span>}
+                        </td>
                         <td className="px-3 py-2">
                           <span
                             className={`rounded-full px-2.5 py-1 text-xs font-semibold whitespace-nowrap ${
@@ -452,7 +468,7 @@ export default function Dashboard({ user }) {
         </>
       )}
 
-      {detail && <Detail s={students.find((x) => x.id === detail.id) || detail} onClose={() => setDetail(null)} onReset={resetStudent} onRemove={removeStudent} />}
+      {detail && <Detail s={students.find((x) => x.id === detail.id) || detail} onClose={() => setDetail(null)} onReset={resetStudent} onResetPin={resetPin} onRemove={removeStudent} />}
     </div>
   );
 }
@@ -493,7 +509,7 @@ function Missed({ title, items, suffix = '', seat = false }) {
   );
 }
 
-function Detail({ s, onClose, onReset, onRemove }) {
+function Detail({ s, onClose, onReset, onResetPin, onRemove }) {
   const [kind, setKind] = useState('county');
   const st = s.state || {};
   const src = (kind === 'county' ? st.counties : st.seats) || {};
@@ -508,7 +524,7 @@ function Detail({ s, onClose, onReset, onRemove }) {
           </button>
           <h2 className="font-display text-3xl font-semibold">{s.name}</h2>
           <p className="text-slate-300">
-            {s.status} · {s.counties}/77 counties · map best {s.mapBest || '—'}/77 · {s.seats}/77 seats · {s.accuracy ?? '—'}% accuracy · {fmtTime(s.seconds)} played · last active {ago(s.lastActive)}
+            {s.hasPin ? '🔒 PIN set' : '🔓 No PIN yet'} · {s.status} · {s.counties}/77 counties · map best {s.mapBest || '—'}/77 · {s.seats}/77 seats · {s.accuracy ?? '—'}% accuracy · {fmtTime(s.seconds)} played · last active {ago(s.lastActive)}
           </p>
           <div className="mt-3 flex gap-2">
             <Button color={kind === 'county' ? 'orange' : 'slate'} onClick={() => setKind('county')}>
@@ -554,6 +570,9 @@ function Detail({ s, onClose, onReset, onRemove }) {
             </div>
           </div>
           <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-700 pt-4">
+            <Button color="sky" onClick={() => onResetPin(s)} disabled={!s.hasPin}>
+              🔑 Reset PIN
+            </Button>
             <Button color="slate" onClick={() => onReset(s)}>
               Reset progress
             </Button>
