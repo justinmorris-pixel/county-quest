@@ -7,7 +7,26 @@ const TABS = [
   { id: 'speed', label: '⚡ Speed', blurb: 'Best Speed Round score' },
   { id: 'daily', label: '📅 Daily', blurb: "Today's Daily Challenge" },
   { id: 'boss', label: '🌪️ Boss', blurb: 'Furthest in the Boss Round' },
+  { id: 'classes', label: '🏫 Class vs Class', blurb: 'How each class is doing' },
 ];
+
+const METRICS = [
+  { id: 'xp', label: 'Average XP' },
+  { id: 'progress', label: 'Progress' },
+  { id: 'daily', label: "Today's Daily" },
+];
+
+// Ranks classes against each other. Averages are per student, so a bigger class has no built-in edge.
+function rankClasses(rows, metric) {
+  const list = rows.map((r) => {
+    const pct = r.students ? Math.round(((r.avg_counties + r.avg_seats) / 154) * 100) : 0;
+    const dailyPct = r.students ? Math.round((r.daily_today / r.students) * 100) : 0;
+    if (metric === 'xp') return { row: r, main: `${r.avg_xp.toLocaleString()} XP`, sub: `average per student · ${r.students} students · ${r.total_xp.toLocaleString()} total`, score: r.avg_xp };
+    if (metric === 'progress') return { row: r, main: `${pct}%`, sub: `avg ${r.avg_counties} counties · ${r.avg_seats} seats mastered per student`, score: pct * 1000 + r.avg_counties };
+    return { row: r, main: `${r.daily_today}/${r.students}`, sub: `${dailyPct}% of the class finished today's Daily Challenge`, score: dailyPct * 1000 + r.daily_today };
+  });
+  return list.sort((a, b) => b.score - a.score || a.row.name.localeCompare(b.row.name));
+}
 
 const fmt = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 const MEDAL = ['🥇', '🥈', '🥉'];
@@ -42,9 +61,12 @@ function rank(rows, tab, today, yesterday) {
     .map((r) => ({ row: r, main: `${r.boss}/77`, sub: r.boss_wins > 0 ? `🏆 beat it ${r.boss_wins}×` : 'still fighting', score: r.boss * 1000 + r.boss_wins }));
 }
 
-export default function Leaderboard({ fetchBoard, initialTab = 'overall', arcadeOpen, onBack, onPlay }) {
+export default function Leaderboard({ fetchBoard, fetchClasses, initialTab = 'overall', arcadeOpen, onBack, onPlay }) {
   const [tab, setTab] = useState(initialTab);
   const [rows, setRows] = useState(null);
+  const [classRows, setClassRows] = useState(null);
+  const [classFail, setClassFail] = useState(false);
+  const [metric, setMetric] = useState('xp');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -52,12 +74,16 @@ export default function Leaderboard({ fetchBoard, initialTab = 'overall', arcade
     setLoading(true);
     setError('');
     try {
-      setRows(await fetchBoard());
+      // The class comparison loads separately so a problem there never hides the main board.
+      const [r, c] = await Promise.all([fetchBoard(), fetchClasses ? fetchClasses().catch(() => 'fail') : Promise.resolve([])]);
+      setRows(r);
+      setClassFail(c === 'fail');
+      setClassRows(c === 'fail' ? null : c);
     } catch (e) {
       setError(e.message || 'Could not load the leaderboard.');
     }
     setLoading(false);
-  }, [fetchBoard]);
+  }, [fetchBoard, fetchClasses]);
 
   useEffect(() => {
     load();
@@ -66,8 +92,10 @@ export default function Leaderboard({ fetchBoard, initialTab = 'overall', arcade
   const today = todayStr();
   const y = new Date();
   y.setDate(y.getDate() - 1);
-  const list = rows ? rank(rows, tab, today, todayStr(y)) : [];
+  const isClasses = tab === 'classes';
+  const list = isClasses ? (classRows ? rankClasses(classRows, metric) : []) : rows ? rank(rows, tab, today, todayStr(y)) : [];
   const me = list.findIndex((x) => x.row.me);
+  const loaded = isClasses ? classRows !== null || classFail : rows !== null;
   const cur = TABS.find((t) => t.id === tab);
   const shown = list.slice(0, 20);
   const meOutside = me >= 20 ? list[me] : null;
@@ -90,9 +118,9 @@ export default function Leaderboard({ fetchBoard, initialTab = 'overall', arcade
         <div className="min-w-0 flex-1">
           <div className="font-display truncate text-lg font-semibold">
             {x.row.name}
-            {x.row.me && <span className="ml-2 rounded-full bg-orange-500 px-2 py-0.5 text-xs">you</span>}
+            {x.row.me && <span className="ml-2 rounded-full bg-orange-500 px-2 py-0.5 text-xs">{isClasses ? 'your class' : 'you'}</span>}
           </div>
-          <div className="truncate text-xs text-slate-400">{x.sub}</div>
+          <div className={`text-xs text-slate-400 ${isClasses ? '' : 'truncate'}`}>{x.sub}</div>
         </div>
         <div className="font-display text-xl font-semibold text-amber-300">{x.main}</div>
       </div>
@@ -130,15 +158,31 @@ export default function Leaderboard({ fetchBoard, initialTab = 'overall', arcade
           </button>
         </div>
 
+        {isClasses && (
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            {METRICS.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => setMetric(m.id)}
+                className={`rounded-xl px-3 py-1.5 text-sm font-semibold ${metric === m.id ? 'bg-sky-500' : 'bg-slate-700 hover:bg-slate-600'}`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+        )}
         {error && <div className="rounded-xl bg-red-500/15 px-3 py-2 text-red-200">{error}</div>}
-        {!error && rows === null && <p className="py-6 text-center text-slate-400">Loading…</p>}
-        {!error && rows !== null && shown.length === 0 && (
+        {!error && !loaded && <p className="py-6 text-center text-slate-400">Loading…</p>}
+        {!error && isClasses && classFail && (
+          <p className="py-6 text-center text-slate-300">Class vs Class is not available right now. Try again in a bit.</p>
+        )}
+        {!error && loaded && !(isClasses && classFail) && shown.length === 0 && (
           <div className="py-6 text-center text-slate-300">
             <div className="text-4xl">{cur.label.split(' ')[0]}</div>
             <p className="mt-2">
-              {tab === 'daily' ? 'Nobody has finished today’s Daily Challenge yet. Be the first!' : tab === 'overall' ? 'No one is on the board yet.' : 'No scores yet. Be the first on the board!'}
+              {tab === 'daily' ? 'Nobody has finished today’s Daily Challenge yet. Be the first!' : tab === 'overall' ? 'No one is on the board yet.' : isClasses ? 'No classes to compare yet.' : 'No scores yet. Be the first on the board!'}
             </p>
-            {tab !== 'overall' && arcadeOpen && (
+            {(tab === 'daily' || (arcadeOpen && (tab === 'speed' || tab === 'boss'))) && (
               <Button color="green" className="mt-3" onClick={() => onPlay(tab)}>
                 Play now
               </Button>
@@ -156,12 +200,17 @@ export default function Leaderboard({ fetchBoard, initialTab = 'overall', arcade
           )}
         </div>
 
-        {tab !== 'overall' && !arcadeOpen && (
+        {isClasses && classRows && classRows.length === 1 && (
           <p className="mt-3 rounded-xl bg-slate-900/60 px-3 py-2 text-center text-sm text-slate-300">
-            🔒 The arcade unlocks when you master every county and county seat. Then you can climb this board.
+            Only one class is set up so far. When your teacher adds more, they will show up here to compete.
           </p>
         )}
-        {tab !== 'overall' && arcadeOpen && shown.length > 0 && (
+        {(tab === 'speed' || tab === 'boss') && !arcadeOpen && (
+          <p className="mt-3 rounded-xl bg-slate-900/60 px-3 py-2 text-center text-sm text-slate-300">
+            🔒 The Speed Round and Boss Round unlock when you master every county and county seat. Then you can climb this board.
+          </p>
+        )}
+        {(tab === 'daily' || (arcadeOpen && (tab === 'speed' || tab === 'boss'))) && shown.length > 0 && (
           <div className="mt-4 text-center">
             <Button color="green" onClick={() => onPlay(tab)}>
               {tab === 'speed' ? '⚡ Play Speed Round' : tab === 'daily' ? '📅 Play Daily Challenge' : '🌪️ Face the Boss'}
