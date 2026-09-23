@@ -4,7 +4,7 @@ import OklahomaMap from '../OklahomaMap.jsx';
 import { supabase } from '../../lib/supabase.js';
 import { COUNTIES } from '../../data/counties.js';
 import { STAGES } from '../../lib/stages.js';
-import { COUNTY_MASTER, SEAT_MASTER } from '../../lib/game.js';
+import { COUNTY_MASTER, SEAT_MASTER, hydrateArcade } from '../../lib/game.js';
 import { load, save } from '../../lib/storage.js';
 
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -512,6 +512,7 @@ function Missed({ title, items, suffix = '', seat = false }) {
 function Detail({ s, onClose, onReset, onResetPin, onRemove }) {
   const [kind, setKind] = useState('county');
   const st = s.state || {};
+  const arc = hydrateArcade(st.arcade);
   const src = (kind === 'county' ? st.counties : st.seats) || {};
   const max = kind === 'county' ? COUNTY_MASTER : SEAT_MASTER;
   const table = COUNTIES.map((c) => ({ c, r: src[c.name] || { lvl: 0, seen: 0, right: 0, wrong: 0 } })).sort((a, b) => b.r.wrong - a.r.wrong || b.r.seen - a.r.seen);
@@ -526,6 +527,13 @@ function Detail({ s, onClose, onReset, onResetPin, onRemove }) {
           <p className="text-slate-300">
             {s.hasPin ? '🔒 PIN set' : '🔓 No PIN yet'} · {s.status} · {s.counties}/77 counties · map best {s.mapBest || '—'}/77 · {s.seats}/77 seats · {s.accuracy ?? '—'}% accuracy · {fmtTime(s.seconds)} played · last active {ago(s.lastActive)}
           </p>
+          {(arc.speed.plays > 0 || arc.daily.days > 0 || arc.boss.attempts > 0) && (
+            <p className="mt-1 text-slate-300">
+              🕹️ Arcade: ⚡ speed best {arc.speed.best} pts ({arc.speed.bestCorrect} correct, {arc.speed.plays} plays) · 📅 daily challenge done {arc.daily.days} day
+              {arc.daily.days === 1 ? '' : 's'} (best streak {arc.daily.bestStreak}) · 🌪️ boss round best {arc.boss.best}/77
+              {arc.boss.wins > 0 ? `, beaten ${arc.boss.wins}×` : ''}
+            </p>
+          )}
           <div className="mt-3 flex gap-2">
             <Button color={kind === 'county' ? 'orange' : 'slate'} onClick={() => setKind('county')}>
               Counties
