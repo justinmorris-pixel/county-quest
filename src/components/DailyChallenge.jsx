@@ -80,6 +80,9 @@ export default function DailyChallenge({ date: dateNow, daily, streakNow, onFini
             <b className="text-white">{DAILY_LEN} questions</b>, the same for everyone in your class today. You only get one try, so make it count. It
             mixes tapping the map, multiple choice, and typing.
           </p>
+          <p className="mt-2 text-slate-300">
+            It covers the whole state, so you may see counties you have not learned yet. That is fine: every miss shows you the right answer.
+          </p>
           {streakBlock(streakNow)}
           {streakNow === 0 && <p className="mt-2 text-slate-300">Finish one every day to build a streak and earn bonus XP.</p>}
           <div className="mt-6 flex flex-wrap justify-center gap-3">
