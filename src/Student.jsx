@@ -7,9 +7,27 @@ import MapChallenge from './components/MapChallenge.jsx';
 import Celebration from './components/Celebration.jsx';
 import StudyMap from './components/StudyMap.jsx';
 import Certificate from './components/Certificate.jsx';
-import { hasBackend, joinClass, resumeSession, saveProgress, studentStatus } from './lib/supabase.js';
+import SpeedRound from './components/SpeedRound.jsx';
+import DailyChallenge from './components/DailyChallenge.jsx';
+import BossRound from './components/BossRound.jsx';
+import Leaderboard from './components/Leaderboard.jsx';
+import { classLeaderboard, hasBackend, joinClass, resumeSession, saveProgress, studentStatus } from './lib/supabase.js';
 import { load, save, remove } from './lib/storage.js';
-import { newState, recordAnswer, recordMapResult, summarize, currentStage, currentSeatStage } from './lib/game.js';
+import {
+  newState,
+  recordAnswer,
+  recordMapResult,
+  recordSpeed,
+  recordDaily,
+  recordBoss,
+  hydrateArcade,
+  arcadeUnlocked,
+  dailyStreakNow,
+  todayStr,
+  summarize,
+  currentStage,
+  currentSeatStage,
+} from './lib/game.js';
 
 const SESSION_KEY = 'cq_session';
 const stateKey = (id) => `cq_state_${id}`;
@@ -18,7 +36,7 @@ const stateKey = (id) => `cq_state_${id}`;
 const hydrate = (raw) => {
   const base = newState();
   if (!raw || typeof raw !== 'object' || !raw.v) return base;
-  return { ...base, ...raw, map: { ...base.map, ...(raw.map || {}) }, counties: raw.counties || {}, seats: raw.seats || {}, badges: raw.badges || [] };
+  return { ...base, ...raw, map: { ...base.map, ...(raw.map || {}) }, counties: raw.counties || {}, seats: raw.seats || {}, badges: raw.badges || [], arcade: hydrateArcade(raw.arcade) };
 };
 
 export default function Student() {
@@ -219,6 +237,30 @@ export default function Student() {
     return ev;
   }
 
+  // ----- arcade -----
+  function onSpeedFinish(result) {
+    const { state: next, ev } = recordSpeed(stateRef.current, result);
+    commit(next);
+    return ev;
+  }
+  function onDailyFinish(result) {
+    const { state: next, ev } = recordDaily(stateRef.current, result);
+    if (!ev.already) commit(next);
+    return ev;
+  }
+  function onBossFinish(result) {
+    const { state: next, ev } = recordBoss(stateRef.current, result);
+    commit(next);
+    return ev;
+  }
+  const fetchBoard = useCallback(() => {
+    return flush().then(() => classLeaderboard(sessionRef.current.studentId));
+  }, [flush]);
+  // A teacher can add ?arcade=1 to the link to preview the arcade before finishing the game.
+  const previewArcade = new URLSearchParams(window.location.search).has('arcade');
+  const arcadeOpen = arcadeUnlocked(state) || previewArcade;
+  const canBoard = hasBackend && !session?.local;
+
   function markIntro(kind) {
     const s = stateRef.current;
     commit(kind === 'county' ? { ...s, introduced: Math.max(s.introduced, currentStage(s)) } : { ...s, seatIntroduced: Math.max(s.seatIntroduced, currentSeatStage(s)) });
@@ -232,7 +274,13 @@ export default function Student() {
     if (action === 'map') setView({ name: 'map' });
     if (action === 'study') setView({ name: 'study' });
     if (action === 'cert') setView({ name: 'cert' });
+    if (action === 'speed' && arcadeOpen) setView({ name: 'speed' });
+    if (action === 'daily' && arcadeOpen) setView({ name: 'daily' });
+    if (action === 'boss' && arcadeOpen) setView({ name: 'boss' });
+    if (action === 'board') setView({ name: 'board', tab: 'overall' });
   }
+
+  const openBoard = (tab) => setView({ name: 'board', tab });
 
   const hub = () => {
     flush();
@@ -286,9 +334,42 @@ export default function Student() {
       />
     );
 
+  if (view.name === 'speed')
+    return (
+      <SpeedRound
+        best={state.arcade.speed.best}
+        bestCorrect={state.arcade.speed.bestCorrect}
+        onFinish={onSpeedFinish}
+        onExit={hub}
+        onBoard={canBoard ? openBoard : null}
+      />
+    );
+  if (view.name === 'daily')
+    return (
+      <DailyChallenge
+        date={todayStr()}
+        daily={state.arcade.daily}
+        streakNow={dailyStreakNow(state)}
+        onFinish={onDailyFinish}
+        onExit={hub}
+        onBoard={canBoard ? openBoard : null}
+      />
+    );
+  if (view.name === 'boss') return <BossRound boss={state.arcade.boss} onFinish={onBossFinish} onExit={hub} onBoard={canBoard ? openBoard : null} />;
+  if (view.name === 'board')
+    return (
+      <Leaderboard
+        initialTab={view.tab}
+        fetchBoard={fetchBoard}
+        arcadeOpen={arcadeOpen}
+        onBack={hub}
+        onPlay={(tab) => setView({ name: tab === 'speed' ? 'speed' : tab === 'daily' ? 'daily' : 'boss' })}
+      />
+    );
+
   if (view.name === 'map') return <MapChallenge best={state.map.best} onFinish={onMapFinish} onExit={hub} />;
   if (view.name === 'study') return <StudyMap state={state} onBack={hub} />;
   if (view.name === 'cert') return <Certificate name={session.name} className={session.className} onBack={hub} />;
 
-  return <Hub state={state} student={session} sync={sync} go={go} onSignOut={signOut} />;
+  return <Hub state={state} student={session} sync={sync} go={go} onSignOut={signOut} arcadeOpen={arcadeOpen} canBoard={canBoard} />;
 }
