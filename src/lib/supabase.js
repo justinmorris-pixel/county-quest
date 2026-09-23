@@ -81,3 +81,20 @@ export async function classLeaderboard(studentId) {
     daily_streak: n(r.daily_streak),
   }));
 }
+
+// Every class that belongs to the same teacher, as totals (no student names from other classes).
+export async function classStandings(studentId, today) {
+  const { data, error } = await supabase.rpc('class_standings', { p_student: studentId, p_today: today });
+  if (error) throw friendly(error);
+  const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  return (Array.isArray(data) ? data : []).map((r) => ({
+    name: String(r.name || ''),
+    me: Boolean(r.me),
+    students: n(r.students),
+    total_xp: n(r.total_xp),
+    avg_xp: n(r.avg_xp),
+    avg_counties: n(r.avg_counties),
+    avg_seats: n(r.avg_seats),
+    daily_today: n(r.daily_today),
+  }));
+}
