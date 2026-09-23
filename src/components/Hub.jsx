@@ -8,11 +8,14 @@ import {
   countiesMastered,
   currentSeatStage,
   currentStage,
+  dailyStreakNow,
+  hydrateArcade,
   lvlOf,
   nextRank,
   phaseOf,
   rankOf,
   seatsMastered,
+  todayStr,
 } from '../lib/game.js';
 import { isSoundOn, setSoundOn } from '../lib/sound.js';
 import { useState } from 'react';
@@ -24,7 +27,7 @@ const SYNC_LABEL = {
   local: '💾 This device only',
 };
 
-export default function Hub({ state, student, sync, go, onSignOut }) {
+export default function Hub({ state, student, sync, go, onSignOut, arcadeOpen, canBoard }) {
   const [sound, setSound] = useState(isSoundOn());
   const phase = phaseOf(state);
   const cm = countiesMastered(state);
@@ -37,6 +40,9 @@ export default function Hub({ state, student, sync, go, onSignOut }) {
   const accuracy = state.answers ? Math.round((state.correct / state.answers) * 100) : null;
 
   const top = phase === 'counties' ? currentStage(state) : N_STAGES;
+  const arc = hydrateArcade(state.arcade);
+  const dailyDone = arc.daily.lastDate === todayStr();
+  const dailyStreak = dailyStreakNow(state);
 
   return (
     <div className="mx-auto flex min-h-full max-w-6xl flex-col gap-4 p-3 sm:p-5">
@@ -133,6 +139,69 @@ export default function Hub({ state, student, sync, go, onSignOut }) {
                   🏅 View my certificate
                 </Button>
               </>
+            )}
+          </Card>
+
+          <Card className={arcadeOpen ? 'border-2 border-amber-400/40' : ''}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="font-display text-xl font-semibold">🕹️ Arcade</h3>
+              {canBoard && (
+                <Button color="sky" onClick={() => go('board')}>
+                  🏆 Class Leaderboard
+                </Button>
+              )}
+            </div>
+            {arcadeOpen ? (
+              <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                <button
+                  onClick={() => go('speed')}
+                  className="rounded-2xl border-b-4 border-slate-900 bg-slate-700 p-3 text-left transition hover:bg-slate-600 active:translate-y-0.5"
+                >
+                  <div className="text-3xl">⚡</div>
+                  <div className="font-display text-lg font-semibold">Speed Round</div>
+                  <div className="text-sm text-slate-300">{arc.speed.best > 0 ? `Best: ${arc.speed.best} pts` : '60 seconds. Go!'}</div>
+                </button>
+                <button
+                  onClick={() => go('daily')}
+                  className="rounded-2xl border-b-4 border-slate-900 bg-slate-700 p-3 text-left transition hover:bg-slate-600 active:translate-y-0.5"
+                >
+                  <div className="text-3xl">{dailyDone ? '✅' : '📅'}</div>
+                  <div className="font-display text-lg font-semibold">Daily Challenge</div>
+                  <div className="text-sm text-slate-300">
+                    {dailyDone ? `Done: ${arc.daily.lastScore}/10` : 'New questions today!'}
+                    {dailyStreak > 0 && <span className="text-orange-300"> · 🔥 {dailyStreak}</span>}
+                  </div>
+                </button>
+                <button
+                  onClick={() => go('boss')}
+                  className="rounded-2xl border-b-4 border-slate-900 bg-slate-700 p-3 text-left transition hover:bg-slate-600 active:translate-y-0.5"
+                >
+                  <div className="text-3xl">🌪️</div>
+                  <div className="font-display text-lg font-semibold">Boss Round</div>
+                  <div className="text-sm text-slate-300">
+                    {arc.boss.attempts > 0 ? `Best: ${arc.boss.best}/77${arc.boss.wins ? ` · 🏆×${arc.boss.wins}` : ''}` : 'All 77. Three lives.'}
+                  </div>
+                </button>
+              </div>
+            ) : (
+              <div className="mt-3 grid gap-3 sm:grid-cols-3 opacity-60">
+                {[
+                  ['⚡', 'Speed Round'],
+                  ['📅', 'Daily Challenge'],
+                  ['🌪️', 'Boss Round'],
+                ].map(([e, n]) => (
+                  <div key={n} className="rounded-2xl bg-slate-900/60 p-3">
+                    <div className="text-3xl grayscale">🔒</div>
+                    <div className="font-display text-lg font-semibold">
+                      {e} {n}
+                    </div>
+                    <div className="text-xs text-slate-400">Locked</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {!arcadeOpen && (
+              <p className="mt-3 text-sm text-slate-300">Master all 77 counties and all 77 county seats to unlock three arcade challenges.</p>
             )}
           </Card>
 
