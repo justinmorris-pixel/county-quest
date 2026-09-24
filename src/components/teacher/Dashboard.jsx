@@ -44,6 +44,7 @@ const normalize = (row) => {
   return {
     id: row.id,
     name: row.name,
+    classId: row.class_id ?? null,
     hasPin: Boolean(row.has_pin),
     lastActive: row.last_active,
     createdAt: row.created_at,
@@ -76,6 +77,7 @@ export default function Dashboard({ user }) {
   const [classes, setClasses] = useState([]);
   const [classId, setClassId] = useState(() => load('cq_class'));
   const [students, setStudents] = useState([]);
+  const [allStudents, setAllStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState('');
   const [adding, setAdding] = useState(false);
@@ -101,13 +103,21 @@ export default function Dashboard({ user }) {
     if (!classId) return setStudents([]);
     const { data, error: err } = await supabase
       .from('students')
-      .select('id,name,created_at,last_active,has_pin,progress(*)')
+      .select('id,name,class_id,created_at,last_active,has_pin,progress(*)')
       .eq('class_id', classId)
       .order('name');
     if (err) return setError(err.message);
     setStudents(data.map(normalize));
     setUpdatedAt(new Date());
   }, [classId]);
+
+  // Every student across every class this teacher owns (RLS scopes this automatically) — used
+  // for the overall leaderboard, which isn't limited to the currently selected class.
+  const loadAllStudents = useCallback(async () => {
+    const { data, error: err } = await supabase.from('students').select('id,name,class_id,created_at,last_active,has_pin,progress(*)').order('name');
+    if (err) return setError(err.message);
+    setAllStudents(data.map(normalize));
+  }, []);
 
   useEffect(() => {
     loadClasses();
@@ -118,6 +128,11 @@ export default function Dashboard({ user }) {
     const t = setInterval(loadStudents, 30000);
     return () => clearInterval(t);
   }, [classId, loadStudents]);
+  useEffect(() => {
+    loadAllStudents();
+    const t = setInterval(loadAllStudents, 30000);
+    return () => clearInterval(t);
+  }, [loadAllStudents]);
 
   async function createClass(e) {
     e.preventDefault();
@@ -167,6 +182,7 @@ export default function Dashboard({ user }) {
     if (err) return setError(err.message);
     setDetail(null);
     loadStudents();
+    loadAllStudents();
   }
 
   async function resetPin(s) {
@@ -177,6 +193,7 @@ export default function Dashboard({ user }) {
     setTimeout(() => setNotice(''), 6000);
     setDetail(null);
     loadStudents();
+    loadAllStudents();
   }
 
   async function removeStudent(s) {
@@ -185,6 +202,7 @@ export default function Dashboard({ user }) {
     if (err) return setError(err.message);
     setDetail(null);
     loadStudents();
+    loadAllStudents();
   }
 
   const studentLink = cls ? `${window.location.origin}/?code=${cls.code}` : '';
@@ -202,14 +220,15 @@ export default function Dashboard({ user }) {
     return [...list].sort((a, b) => (val(a) > val(b) ? 1 : val(a) < val(b) ? -1 : 0) * dir);
   }, [students, sort, query]);
 
-  // Overall leaderboard: every student in the class ranked by total XP.
+  // Overall leaderboard: every student across every class this teacher has, ranked by total XP.
   const leaderboard = useMemo(
     () =>
-      students
-        .map((s) => ({ id: s.id, name: s.name, xp: Math.max(0, Math.round(Number(s.state?.xp) || 0)), counties: s.counties, seats: s.seats }))
+      allStudents
+        .map((s) => ({ ...s, xp: Math.max(0, Math.round(Number(s.state?.xp) || 0)) }))
         .sort((a, b) => b.xp - a.xp || a.name.localeCompare(b.name)),
-    [students]
+    [allStudents]
   );
+  const classNameOf = useCallback((classId2) => classes.find((c) => c.id === classId2)?.name || '', [classes]);
 
   // Keeps a sticky horizontal scrollbar in sync with the student table so it can be reached
   // without scrolling to the bottom of the (possibly long) table.
@@ -416,17 +435,17 @@ export default function Dashboard({ user }) {
           {/* overall leaderboard */}
           <Card>
             <div className="mb-3 flex items-center justify-between gap-2">
-              <h3 className="font-display text-lg font-semibold">🏆 Overall Class Leaderboard</h3>
-              <span className="text-xs text-slate-500">ranked by total XP · click a student for details</span>
+              <h3 className="font-display text-lg font-semibold">🏆 Overall Leaderboard</h3>
+              <span className="text-xs text-slate-500">ranked by total XP · all your classes · click a student for details</span>
             </div>
             {leaderboard.length === 0 ? (
-              <p className="text-sm text-slate-400">No students yet. Share the class code or link above.</p>
+              <p className="text-sm text-slate-400">No students yet. Share a class code or link above.</p>
             ) : (
               <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
                 {leaderboard.map((s, i) => (
                   <button
                     key={s.id}
-                    onClick={() => setDetail(students.find((x) => x.id === s.id))}
+                    onClick={() => setDetail(s)}
                     className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-left transition hover:bg-slate-700/50 ${
                       i < 3 ? 'bg-amber-500/10' : 'bg-slate-900/50'
                     }`}
@@ -434,7 +453,10 @@ export default function Dashboard({ user }) {
                     <span className="font-display w-7 shrink-0 text-center text-base font-semibold text-slate-300">
                       {i < 3 ? ['🥇', '🥈', '🥉'][i] : i + 1}
                     </span>
-                    <span className="min-w-0 flex-1 truncate font-semibold">{s.name}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-semibold">{s.name}</span>
+                      {classes.length > 1 && <span className="block truncate text-xs text-slate-500">{classNameOf(s.classId)}</span>}
+                    </span>
                     <span className="shrink-0 text-xs whitespace-nowrap text-slate-400">
                       {s.counties}/77 · {s.seats}/77
                     </span>
@@ -564,7 +586,15 @@ export default function Dashboard({ user }) {
         </>
       )}
 
-      {detail && <Detail s={students.find((x) => x.id === detail.id) || detail} onClose={() => setDetail(null)} onReset={resetStudent} onResetPin={resetPin} onRemove={removeStudent} />}
+      {detail && (
+        <Detail
+          s={students.find((x) => x.id === detail.id) || allStudents.find((x) => x.id === detail.id) || detail}
+          onClose={() => setDetail(null)}
+          onReset={resetStudent}
+          onResetPin={resetPin}
+          onRemove={removeStudent}
+        />
+      )}
     </div>
   );
 }
