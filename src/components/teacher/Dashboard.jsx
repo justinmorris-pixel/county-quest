@@ -436,13 +436,15 @@ export default function Dashboard({ user }) {
           <Card>
             <div className="mb-3 flex items-center justify-between gap-2">
               <h3 className="font-display text-lg font-semibold">🏆 Overall Leaderboard</h3>
-              <span className="text-xs text-slate-500">ranked by total XP · all your classes · click a student for details</span>
+              <span className="text-xs text-slate-500">
+                {leaderboard.length > 9 ? 'top 9 · ' : ''}ranked by total XP · all your classes · click a student for details
+              </span>
             </div>
             {leaderboard.length === 0 ? (
               <p className="text-sm text-slate-400">No students yet. Share a class code or link above.</p>
             ) : (
               <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
-                {leaderboard.map((s, i) => (
+                {leaderboard.slice(0, 9).map((s, i) => (
                   <button
                     key={s.id}
                     onClick={() => setDetail(s)}
