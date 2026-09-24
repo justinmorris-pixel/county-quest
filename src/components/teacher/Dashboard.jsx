@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Card } from '../ui.jsx';
 import OklahomaMap from '../OklahomaMap.jsx';
 import { supabase } from '../../lib/supabase.js';
@@ -202,6 +202,57 @@ export default function Dashboard({ user }) {
     return [...list].sort((a, b) => (val(a) > val(b) ? 1 : val(a) < val(b) ? -1 : 0) * dir);
   }, [students, sort, query]);
 
+  // Overall leaderboard: every student in the class ranked by total XP.
+  const leaderboard = useMemo(
+    () =>
+      students
+        .map((s) => ({ id: s.id, name: s.name, xp: Math.max(0, Math.round(Number(s.state?.xp) || 0)), counties: s.counties, seats: s.seats }))
+        .sort((a, b) => b.xp - a.xp || a.name.localeCompare(b.name)),
+    [students]
+  );
+
+  // Keeps a sticky horizontal scrollbar in sync with the student table so it can be reached
+  // without scrolling to the bottom of the (possibly long) table.
+  const tableWrapRef = useRef(null);
+  const fakeScrollRef = useRef(null);
+  const syncingScroll = useRef(false);
+  const [tableScrollW, setTableScrollW] = useState(0);
+  const [tableOverflows, setTableOverflows] = useState(false);
+
+  const checkTableOverflow = useCallback(() => {
+    const el = tableWrapRef.current;
+    if (!el) return;
+    setTableScrollW(el.scrollWidth);
+    setTableOverflows(el.scrollWidth > el.clientWidth + 1);
+  }, []);
+
+  useEffect(() => {
+    checkTableOverflow();
+    window.addEventListener('resize', checkTableOverflow);
+    return () => window.removeEventListener('resize', checkTableOverflow);
+  }, [checkTableOverflow, rows]);
+
+  function onTableScroll() {
+    if (syncingScroll.current) {
+      syncingScroll.current = false;
+      return;
+    }
+    if (fakeScrollRef.current && tableWrapRef.current) {
+      syncingScroll.current = true;
+      fakeScrollRef.current.scrollLeft = tableWrapRef.current.scrollLeft;
+    }
+  }
+  function onFakeScroll() {
+    if (syncingScroll.current) {
+      syncingScroll.current = false;
+      return;
+    }
+    if (fakeScrollRef.current && tableWrapRef.current) {
+      syncingScroll.current = true;
+      tableWrapRef.current.scrollLeft = fakeScrollRef.current.scrollLeft;
+    }
+  }
+
   const insights = useMemo(() => {
     const agg = (kind) => {
       const m = {};
@@ -362,9 +413,42 @@ export default function Dashboard({ user }) {
             ))}
           </div>
 
+          {/* overall leaderboard */}
+          <Card>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h3 className="font-display text-lg font-semibold">🏆 Overall Class Leaderboard</h3>
+              <span className="text-xs text-slate-500">ranked by total XP · click a student for details</span>
+            </div>
+            {leaderboard.length === 0 ? (
+              <p className="text-sm text-slate-400">No students yet. Share the class code or link above.</p>
+            ) : (
+              <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+                {leaderboard.map((s, i) => (
+                  <button
+                    key={s.id}
+                    onClick={() => setDetail(students.find((x) => x.id === s.id))}
+                    className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-left transition hover:bg-slate-700/50 ${
+                      i < 3 ? 'bg-amber-500/10' : 'bg-slate-900/50'
+                    }`}
+                  >
+                    <span className="font-display w-7 shrink-0 text-center text-base font-semibold text-slate-300">
+                      {i < 3 ? ['🥇', '🥈', '🥉'][i] : i + 1}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate font-semibold">{s.name}</span>
+                    <span className="shrink-0 text-xs whitespace-nowrap text-slate-400">
+                      {s.counties}/77 · {s.seats}/77
+                    </span>
+                    <span className="font-display shrink-0 text-sm font-semibold whitespace-nowrap text-amber-300">{s.xp.toLocaleString()} XP</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </Card>
+
           <div className="grid items-start gap-4 lg:grid-cols-[1fr_360px]">
             {/* table */}
-            <Card className="overflow-hidden p-0">
+            <Card className="p-0">
+              <div className="overflow-hidden rounded-3xl">
               <div className="flex flex-wrap items-center gap-2 border-b border-slate-700 p-3">
                 <input
                   value={query}
@@ -382,7 +466,7 @@ export default function Dashboard({ user }) {
                   ⬇ County detail CSV
                 </Button>
               </div>
-              <div className="overflow-x-auto">
+              <div ref={tableWrapRef} onScroll={onTableScroll} className="overflow-x-auto">
                 <table className="w-full min-w-[820px] text-sm">
                   <thead className="bg-slate-900/60">
                     <tr>
@@ -442,6 +526,18 @@ export default function Dashboard({ user }) {
                   </tbody>
                 </table>
               </div>
+              </div>
+              {tableOverflows && (
+                <div
+                  ref={fakeScrollRef}
+                  onScroll={onFakeScroll}
+                  aria-hidden="true"
+                  className="fake-hscroll sticky bottom-0 z-20 overflow-x-auto overflow-y-hidden border-t border-slate-700 bg-slate-800/95"
+                  style={{ height: 16 }}
+                >
+                  <div style={{ width: tableScrollW, height: 1 }} />
+                </div>
+              )}
               <div className="border-t border-slate-700/60 px-3 py-2 text-xs text-slate-500">
                 Auto-refreshes every 30 seconds{updatedAt ? ` · updated ${updatedAt.toLocaleTimeString()}` : ''} · click a student for details
               </div>
