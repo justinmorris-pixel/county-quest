@@ -29,6 +29,12 @@ body {
 @keyframes confetti { 0% { transform: translateY(-10vh) rotate(0); opacity: 1 } 100% { transform: translateY(105vh) rotate(720deg); opacity: .9 } }
 .confetti-piece { position: fixed; top: 0; width: 10px; height: 14px; animation: confetti 2.6s linear forwards; z-index: 60; pointer-events: none; }
 
+.fake-hscroll { scrollbar-width: thin; scrollbar-color: #f97316 #1e293b; }
+.fake-hscroll::-webkit-scrollbar { height: 10px; }
+.fake-hscroll::-webkit-scrollbar-track { background: #1e293b; }
+.fake-hscroll::-webkit-scrollbar-thumb { background: #f97316; border-radius: 999px; }
+.fake-hscroll::-webkit-scrollbar-thumb:hover { background: #fb923c; }
+
 @media print {
   body { background: white; color: black; }
   .no-print { display: none !important; }
