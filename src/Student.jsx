@@ -283,6 +283,17 @@ export default function Student() {
     if (action === 'board') setView({ name: 'board', tab: 'overall' });
   }
 
+  // Replay a specific, already-unlocked stage. The current frontier stage still goes through
+  // the normal intro-then-quiz flow (or straight to quiz once its intro has been seen); any
+  // earlier, already-cleared stage skips the intro and opens as a review round.
+  function playStage(kind, n) {
+    const s = stateRef.current;
+    const top = kind === 'county' ? currentStage(s) : currentSeatStage(s);
+    const introduced = kind === 'county' ? s.introduced : s.seatIntroduced;
+    if (n === top && introduced < top) setView({ name: 'intro', kind, stage: n });
+    else setView({ name: 'quiz', kind, stage: n, replay: n < top });
+  }
+
   const openBoard = (tab) => setView({ name: 'board', tab });
 
   const hub = () => {
@@ -305,7 +316,7 @@ export default function Student() {
         onBack={hub}
         onStart={() => {
           markIntro(view.kind);
-          setView({ name: 'quiz', kind: view.kind });
+          setView({ name: 'quiz', kind: view.kind, stage: view.stage });
         }}
       />
     );
@@ -313,9 +324,10 @@ export default function Student() {
   if (view.name === 'quiz')
     return (
       <Quiz
-        key={view.kind}
+        key={`${view.kind}-${view.stage || 'current'}`}
         state={state}
         kind={view.kind}
+        stageOverride={view.stage}
         onAnswer={onAnswer}
         onExit={hub}
         onStageCleared={(n) => onStageCleared(view.kind, n)}
@@ -375,5 +387,5 @@ export default function Student() {
   if (view.name === 'study') return <StudyMap state={state} onBack={hub} />;
   if (view.name === 'cert') return <Certificate name={session.name} className={session.className} onBack={hub} />;
 
-  return <Hub state={state} student={session} sync={sync} go={go} onSignOut={signOut} arcadeOpen={arcadeOpen} canBoard={canBoard} />;
+  return <Hub state={state} student={session} sync={sync} go={go} onPlayStage={playStage} onSignOut={signOut} arcadeOpen={arcadeOpen} canBoard={canBoard} />;
 }
