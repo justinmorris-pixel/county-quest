@@ -341,6 +341,22 @@ function modeFor(kind, lvl, max) {
   return lvl === 0 ? 'choice' : 'type';
 }
 
+// Replay mode: quizzes every county in ONE stage exactly once (any mastery level), for
+// students revisiting a stage they've already unlocked or fully mastered. `asked` is the
+// list of names already covered this round; returns null once the stage is exhausted.
+export function pickNextInStage(s, kind, stage, asked = [], recent = []) {
+  const max = masterLevel(kind);
+  const pool = COUNTIES.filter((c) => c.stage === stage && !asked.includes(c.name));
+  if (!pool.length) return null;
+  const pick = weightedPick(pool, (c) => {
+    const r = rec(s, kind, c.name);
+    let w = max - r.lvl + 1;
+    if (recent.includes(c.name)) w *= 0.2;
+    return Math.max(w, 0.3);
+  });
+  return { name: pick.name, mode: modeFor(kind, lvlOf(s, kind, pick.name), max) };
+}
+
 // Returns { name, mode } or null when everything unlocked is mastered.
 export function pickNext(s, kind, recent = []) {
   const max = masterLevel(kind);
