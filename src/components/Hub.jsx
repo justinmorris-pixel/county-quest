@@ -27,7 +27,7 @@ const SYNC_LABEL = {
   local: '💾 This device only',
 };
 
-export default function Hub({ state, student, sync, go, onSignOut, arcadeOpen, canBoard }) {
+export default function Hub({ state, student, sync, go, onPlayStage, onSignOut, arcadeOpen, canBoard }) {
   const [sound, setSound] = useState(isSoundOn());
   const phase = phaseOf(state);
   const cm = countiesMastered(state);
@@ -231,10 +231,15 @@ export default function Hub({ state, student, sync, go, onSignOut, arcadeOpen, c
                 const cleared = state.stagesCleared >= s.n;
                 const current = phase === 'counties' && currentStage(state) === s.n;
                 const locked = !cleared && !current;
+                const Row = locked ? 'div' : 'button';
                 return (
-                  <div
+                  <Row
                     key={s.n}
-                    className={`flex items-center gap-3 rounded-2xl px-3 py-2 ${current ? 'bg-slate-700 ring-2' : 'bg-slate-900/50'} ${locked ? 'opacity-45' : ''}`}
+                    type={locked ? undefined : 'button'}
+                    onClick={locked ? undefined : () => onPlayStage('county', s.n)}
+                    className={`flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left ${current ? 'bg-slate-700 ring-2' : 'bg-slate-900/50'} ${
+                      locked ? 'opacity-45' : 'transition hover:bg-slate-700/70'
+                    }`}
                     style={current ? { '--tw-ring-color': s.color } : {}}
                   >
                     <div className="text-2xl">{locked ? '🔒' : s.emoji}</div>
@@ -244,14 +249,17 @@ export default function Hub({ state, student, sync, go, onSignOut, arcadeOpen, c
                       </div>
                       {!locked && <StagePips state={state} kind="county" stage={s.n} />}
                     </div>
-                    {cleared && <span className="text-emerald-400">✓</span>}
-                  </div>
+                    {cleared && <span className="text-emerald-400">{current ? '✓' : '↻'}</span>}
+                  </Row>
                 );
               })}
-              <div
-                className={`flex items-center gap-3 rounded-2xl px-3 py-2 ${phase === 'map' ? 'bg-slate-700 ring-2 ring-amber-300' : 'bg-slate-900/50'} ${
-                  phase === 'counties' ? 'opacity-45' : ''
-                }`}
+              <button
+                type="button"
+                disabled={phase === 'counties'}
+                onClick={() => go('map')}
+                className={`flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left ${
+                  phase === 'map' ? 'bg-slate-700 ring-2 ring-amber-300' : 'bg-slate-900/50'
+                } ${phase === 'counties' ? 'opacity-45' : 'transition hover:bg-slate-700/70'}`}
               >
                 <div className="text-2xl">{phase === 'counties' ? '🔒' : '🏆'}</div>
                 <div className="font-display flex-1 font-semibold">Full Map Challenge</div>
@@ -260,16 +268,46 @@ export default function Hub({ state, student, sync, go, onSignOut, arcadeOpen, c
                 ) : (
                   state.map.attempts > 0 && <span className="text-sm text-slate-400">best {state.map.best}/77</span>
                 )}
-              </div>
-              <div
-                className={`flex items-center gap-3 rounded-2xl px-3 py-2 ${phase === 'seats' ? 'bg-slate-700 ring-2 ring-sky-300' : 'bg-slate-900/50'} ${
-                  phase === 'counties' || phase === 'map' ? 'opacity-45' : ''
-                }`}
-              >
-                <div className="text-2xl">{phase === 'counties' || phase === 'map' ? '🔒' : '🏛️'}</div>
-                <div className="font-display flex-1 font-semibold">County Seats</div>
-                <span className="text-sm text-slate-400">{sm}/77</span>
-              </div>
+              </button>
+              {state.map.passed ? (
+                <div className="grid gap-2">
+                  {STAGES.map((s) => {
+                    const cleared = state.seatStagesCleared >= s.n;
+                    const current = phase === 'seats' && currentSeatStage(state) === s.n;
+                    const locked = !cleared && !current;
+                    const Row = locked ? 'div' : 'button';
+                    return (
+                      <Row
+                        key={`seat-${s.n}`}
+                        type={locked ? undefined : 'button'}
+                        onClick={locked ? undefined : () => onPlayStage('seat', s.n)}
+                        className={`flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left ${current ? 'bg-slate-700 ring-2 ring-sky-300' : 'bg-slate-900/50'} ${
+                          locked ? 'opacity-45' : 'transition hover:bg-slate-700/70'
+                        }`}
+                      >
+                        <div className="text-2xl">{locked ? '🔒' : '🏛️'}</div>
+                        <div className="min-w-0 flex-1">
+                          <div className="font-display truncate font-semibold">
+                            Seats {s.n}. {s.name}
+                          </div>
+                          {!locked && <StagePips state={state} kind="seat" stage={s.n} />}
+                        </div>
+                        {cleared && <span className="text-emerald-400">{current ? '✓' : '↻'}</span>}
+                      </Row>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div
+                  className={`flex items-center gap-3 rounded-2xl px-3 py-2 ${phase === 'seats' ? 'bg-slate-700 ring-2 ring-sky-300' : 'bg-slate-900/50'} ${
+                    phase === 'counties' || phase === 'map' ? 'opacity-45' : ''
+                  }`}
+                >
+                  <div className="text-2xl">{phase === 'counties' || phase === 'map' ? '🔒' : '🏛️'}</div>
+                  <div className="font-display flex-1 font-semibold">County Seats</div>
+                  <span className="text-sm text-slate-400">{sm}/77</span>
+                </div>
+              )}
             </div>
           </Card>
 
