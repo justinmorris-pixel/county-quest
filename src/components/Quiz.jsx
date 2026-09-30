@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import OklahomaMap from './OklahomaMap.jsx';
 import { Button, Card, StagePips, masteryStyle, useKey } from './ui.jsx';
-import { choicesFor, currentSeatStage, currentStage, pickNext, countiesMastered, seatsMastered } from '../lib/game.js';
+import { choicesFor, currentSeatStage, currentStage, pickNext, pickNextInStage, countiesMastered, seatsMastered } from '../lib/game.js';
 import { COUNTY_BY_NAME, STAGES } from '../lib/stages.js';
 import { isMatch } from '../lib/match.js';
 import { sfx } from '../lib/sound.js';
@@ -10,11 +10,13 @@ import { unlockedCounties } from '../lib/game.js';
 const CHEERS = ['Nice!', 'Correct!', 'You got it!', 'Yes!', 'Sharp!', 'Boom!', 'Nailed it!'];
 const cheer = () => CHEERS[Math.floor(Math.random() * CHEERS.length)];
 
-export default function Quiz({ state, kind, onAnswer, onExit, onStageCleared }) {
+export default function Quiz({ state, kind, stageOverride, onAnswer, onExit, onStageCleared }) {
   const isCounty = kind === 'county';
+  const replay = Boolean(stageOverride);
   const stateRef = useRef(state);
   stateRef.current = state;
   const recent = useRef([]);
+  const asked = useRef([]);
   const timer = useRef(null);
   const inputRef = useRef(null);
 
@@ -29,18 +31,22 @@ export default function Quiz({ state, kind, onAnswer, onExit, onStageCleared }) 
   const [shake, setShake] = useState(0);
 
   // Frozen at mount so the screen doesn't jump to the next stage before the celebration appears.
-  const top = useRef(isCounty ? currentStage(state) : currentSeatStage(state)).current;
+  const top = useRef(stageOverride || (isCounty ? currentStage(state) : currentSeatStage(state))).current;
+  // The real unlocked frontier — used for map rendering so a replay of an older stage doesn't
+  // make later, already-unlocked counties look locked again.
+  const mapTop = useRef(isCounty ? currentStage(state) : currentSeatStage(state)).current;
   const stage = STAGES[top - 1];
   const unlocked = useRef(unlockedCounties(state, kind).map((c) => c.name)).current;
 
   const advance = useCallback(() => {
     const s = stateRef.current;
-    const p = pickNext(s, kind, recent.current);
+    const p = replay ? pickNextInStage(s, kind, top, asked.current, recent.current) : pickNext(s, kind, recent.current);
     if (!p) {
       setQ(null);
       setPhase('done');
       return;
     }
+    if (replay) asked.current = [...asked.current, p.name];
     recent.current = [p.name, ...recent.current].slice(0, 2);
     const options = p.mode === 'choice' ? choicesFor(s, kind, p.name) : null;
     setQ({ ...p, options });
@@ -50,7 +56,7 @@ export default function Quiz({ state, kind, onAnswer, onExit, onStageCleared }) 
     setPicked(null);
     setFeedback('');
     setGain(null);
-  }, [kind]);
+  }, [kind, replay, top]);
 
   useEffect(() => {
     advance();
@@ -77,7 +83,7 @@ export default function Quiz({ state, kind, onAnswer, onExit, onStageCleared }) 
       setFeedback(ev.mastered ? '⭐ Mastered!' : cheer());
       timer.current = setTimeout(
         () => {
-          if (ev.stageCleared) onStageCleared(ev.stageCleared);
+          if (ev.stageCleared && !replay) onStageCleared(ev.stageCleared);
           else advance();
         },
         ev.mastered ? 1100 : 750
@@ -162,6 +168,7 @@ export default function Quiz({ state, kind, onAnswer, onExit, onStageCleared }) 
           <div className="font-display truncate text-lg font-semibold" style={{ color: stage.color }}>
             {stage.emoji} Stage {top}: {stage.name}
             {!isCounty && <span className="text-slate-300"> · County Seats</span>}
+            {replay && <span className="ml-2 rounded-full bg-slate-700 px-2 py-0.5 text-xs font-semibold text-sky-300 align-middle">↻ Review</span>}
           </div>
           <StagePips state={state} kind={kind} stage={top} />
         </div>
@@ -183,8 +190,8 @@ export default function Quiz({ state, kind, onAnswer, onExit, onStageCleared }) 
       <div className="grid flex-1 items-start gap-4 lg:grid-cols-[1fr_390px]">
         <Card className="p-2 sm:p-3">
           <OklahomaMap
-            styleFor={(c) => masteryStyle(state, kind, c, top)}
-            clickable={(c) => Boolean(q && q.mode === 'tap' && phase === 'asking' && c.stage <= top)}
+            styleFor={(c) => masteryStyle(state, kind, c, mapTop)}
+            clickable={(c) => Boolean(q && q.mode === 'tap' && phase === 'asking' && c.stage <= mapTop)}
             onCountyClick={onMapClick}
             marks={marks}
             focus={unlocked}
@@ -194,8 +201,10 @@ export default function Quiz({ state, kind, onAnswer, onExit, onStageCleared }) 
         <div className="flex flex-col gap-3">
           {phase === 'done' && (
             <Card className="text-center">
-              <div className="text-5xl">🎉</div>
-              <h2 className="font-display mt-2 text-2xl font-semibold">Everything here is mastered!</h2>
+              <div className="text-5xl">{replay ? '✅' : '🎉'}</div>
+              <h2 className="font-display mt-2 text-2xl font-semibold">
+                {replay ? `Nice review of Stage ${top}!` : 'Everything here is mastered!'}
+              </h2>
               <p className="mt-1 text-slate-300">
                 {progress} {isCounty ? 'counties' : 'county seats'} mastered so far.
               </p>
